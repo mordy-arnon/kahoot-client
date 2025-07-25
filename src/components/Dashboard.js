@@ -182,7 +182,7 @@ const Dashboard = () => {
                     )}
                     <div style={{ display: 'flex', gap: '15px', fontSize: '14px', color: '#6c757d' }}>
                       <span>📅 Created: {quiz.createdAt ? new Date(quiz.createdAt).toLocaleDateString() : 'Unknown'}</span>
-                      <span>❓ Questions: -</span>
+                      <span>❓Questions: {quiz.questions?.length || 0}</span>
                       <span>👤 Creator: {quiz.creator?.username || 'Unknown'}</span>
                     </div>
                   </div>
