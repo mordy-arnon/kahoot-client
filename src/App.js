@@ -4,6 +4,9 @@ import HomePage from './components/HomePage';
 import Dashboard from './components/Dashboard';
 import QuestionsList from './components/QuestionsList';
 import QuestionEditor from './components/QuestionEditor';
+import ViewerJoin from './components/ViewerJoin';
+import ViewerWaiting from './components/ViewerWaiting';
+import ViewerPlay from './components/ViewerPlay';
 import './App.css';
 
 function App() {
@@ -35,6 +38,11 @@ function App() {
             path="/quiz/:quizId/question/:questionId/edit" 
             element={isAuthenticated() ? <QuestionEditor /> : <Navigate to="/" />} 
           />
+
+          {/* Viewer routes - no authentication required */}
+          <Route path="/quiz/:quizId/join" element={<ViewerJoin />} />
+          <Route path="/quiz/:quizId/waiting" element={<ViewerWaiting />} />
+          <Route path="/quiz/:quizId/play" element={<ViewerPlay />} />
         </Routes>
       </div>
     </Router>

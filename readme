@@ -1,0 +1,34 @@
+this is a kahoot client.
+hte servers are splited to 3:
+1) the ../builders is java resource server to build the quizes.
+2) the ../viewers is java server for the students that come to answer the quizes.
+3) the ../authserver is java server a for signup and login.
+the builders and viewers are resource services that trust the authserver token.
+the servers are already exist and use maven.
+the java servers are in ports:
+REACT_APP_AUTH_API_URL=http://localhost:8079
+REACT_APP_BUILDER_API_URL=http://localhost:8080
+REACT_APP_VIEWER_API_URL=http://localhost:8081
+
+I need to align the client to the servers ports and APIs.
+the client is in port 3000.
+
+please verify the following flows are working:
+1) creator is dignup or login. in ../authserver 
+2) creator and can see his quizes. in ../builders
+2) creator can create a new quiz. in ../builders
+3) creator can edit a quiz. in ../builders
+4) creator can delete a quiz. in ../builders
+5) creator can add quesetions to quiz. each question has 4 answers. in ../builders
+6) creator can add a timer to the quiz. in ../builders
+7) creator can add a title to the quiz. in ../builders
+8) creator can add a description to the quiz. in ../builders
+9) creator can add a image to the quiz. in ../builders
+10) creator can open a quiz. in ../viewers
+11) student can join the answering students on a specific quiz by inserting it number. in ../viewers
+12) student can insert his name to be seen by creator after the quiz opened. in ../viewers
+13) student can answer each question in the limited time. in ../viewers
+14) for each question, when time ends, the right answer is shown and the points are added to the students and are shown in the creator screen. in ../viewers
+14) student can see the results of the quiz. in ../viewers
+
+** verify when API return 400 or 401 or 500, the client shows the right error message.

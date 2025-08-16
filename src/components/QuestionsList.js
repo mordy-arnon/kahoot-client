@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { quizAPI } from '../services/api';
+import { quizAPI, authAPI } from '../services/api';
 
 const QuestionsList = () => {
   const [quiz, setQuiz] = useState(null);
@@ -20,9 +20,22 @@ const QuestionsList = () => {
   });
 
   useEffect(() => {
-    loadQuizAndQuestions();
+    validateTokenAndLoadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quizId]);
+
+  const validateTokenAndLoadData = async () => {
+    try {
+      // Validate token with auth server
+      await authAPI.validateToken();
+      // If validation succeeds, load quiz and questions
+      await loadQuizAndQuestions();
+    } catch (err) {
+      console.error('❌ Token validation failed:', err);
+      // If token is invalid, redirect to login
+      handleLogout();
+    }
+  };
 
   const loadQuizAndQuestions = async () => {
     try {
@@ -43,8 +56,12 @@ const QuestionsList = () => {
       setQuestions(Array.isArray(questionsResponse.data) ? questionsResponse.data : []);
     } catch (err) {
       console.error('❌ Error loading quiz:', err);
-      setError('Failed to load quiz and questions');
-      setQuestions([]); // Ensure questions is always an array
+      if (err.response?.status === 401) {
+        handleLogout();
+      } else {
+        setError('Failed to load quiz and questions');
+        setQuestions([]); // Ensure questions is always an array
+      }
     } finally {
       setLoading(false);
     }
@@ -52,6 +69,7 @@ const QuestionsList = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('jwt');
+    localStorage.removeItem('user');
     navigate('/');
   };
 
@@ -62,7 +80,11 @@ const QuestionsList = () => {
         // In a real app, you'd implement a DELETE endpoint
         setQuestions(questions.filter(q => q.id !== questionId));
       } catch (err) {
-        setError('Failed to delete question');
+        if (err.response?.status === 401) {
+          handleLogout();
+        } else {
+          setError('Failed to delete question');
+        }
       }
     }
   };

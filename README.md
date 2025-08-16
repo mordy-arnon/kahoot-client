@@ -1,88 +1,86 @@
-# Kahoot Client
+# Kahoot Clone Client
 
-A React-based web application for creating quiz questions similar to Kahoot.
+This is the frontend client for the Kahoot Clone project.
 
-## Features
+## Environment Setup
 
-- **User Authentication**: Sign up and login with JWT token authentication
-- **Question Creation**: Create multiple choice questions with 4 options
-- **Progress Tracking**: Visual progress bar during question creation
-- **Modern UI**: Clean, responsive design with gradient backgrounds
+Create a `.env` file in the root directory with the following variables:
 
-## Setup Instructions
+```env
+REACT_APP_AUTH_API_URL=http://localhost:8079
+REACT_APP_BUILDER_API_URL=http://localhost:8080
+REACT_APP_VIEWER_API_URL=http://localhost:8081
+```
 
-1. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Environment Variables**
-   Create a `.env` file in the root directory:
-   ```
-   REACT_APP_API_URL=http://localhost:3001
-   ```
-
-3. **Start the Application**
-   ```bash
-   npm start
-   ```
-
-The application will be available at `http://localhost:3000`.
-
-## API Endpoints
-
-The application expects the following API endpoints:
-
-### Authentication
-- `POST /signup` - User registration
-  ```json
-  {
-    "name": "John Doe",
-    "email": "john@example.com", 
-    "password": "password123"
-  }
-  ```
-
-- `POST /login` - User login
-  ```json
-  {
-    "email": "john@example.com",
-    "password": "password123"
-  }
-  ```
-  Returns: `{ "token": "jwt_token_here" }`
-
-### Game Management
-- `POST /game` - Create a new game
-  Returns: `{ "gameId": "unique_game_id" }`
-
-- `POST /game/{gameId}/question/{questionId}` - Create a question
-  ```json
-  {
-    "question": "What is the capital of France?",
-    "options": ["London", "Berlin", "Paris", "Madrid"],
-    "correctAnswer": 2
-  }
-  ```
-
-## Usage Flow
-
-1. **Homepage**: Users can sign up or login
-2. **Dashboard**: After authentication, users can create and manage quizzes
-3. **Quiz Management**: Create new quizzes, view existing ones, and manage questions
-4. **Question Creation**: Add questions to quizzes with full CRUD operations
-5. **Database Storage**: All quizzes and questions are persisted in the database
-
-## Technology Stack
-
-- React 18
-- React Router 6
-- Axios for HTTP requests  
-- Local Storage for JWT token management
-- CSS3 with modern styling
+These variables configure the client to connect to:
+- Auth Server (port 8079) - Handles user authentication
+- Builder Server (port 8080) - Manages quiz creation and editing
+- Viewer Server (port 8081) - Manages quiz participation
 
 ## Development
 
-- `npm start` - Start development server
-- `npm run build` - Build for production
-- `npm test` - Run tests 
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Start the development server:
+```bash
+npm start
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000).
+
+## Architecture
+
+The application is split into three main services:
+
+1. **Auth Server** (port 8079)
+   - User registration and login
+   - JWT token generation and validation
+   - User profile management
+
+2. **Builder Server** (port 8080)
+   - Quiz creation and editing
+   - Question management
+   - Quiz settings and configuration
+
+3. **Viewer Server** (port 8081)
+   - Quiz participation
+   - Real-time quiz state management
+   - Viewer session handling
+   - Answer submission and scoring
+
+## Authentication Flow
+
+1. User logs in via Auth Server
+2. Auth Server returns JWT token
+3. Client stores token in localStorage
+4. Token is included in all requests to Builder and Viewer servers
+5. Resource servers validate token before processing requests
+
+## API Structure
+
+### Auth API (`authAPI`)
+- `signup(userData)` - Register new user
+- `login(credentials)` - Login user
+- `validateToken()` - Validate current JWT token
+
+### Quiz API (`quizAPI`)
+- `getAllQuizzes()` - Get user's quizzes
+- `getQuiz(quizId)` - Get specific quiz
+- `createQuiz(quizData)` - Create new quiz
+- `updateQuiz(quizId, quizData)` - Update quiz
+- `getQuestions(quizId)` - Get quiz questions
+- `createQuestion(quizId, questionData)` - Add question
+- `createOrUpdateQuestion(quizId, questionId, questionData)` - Update question
+
+### Viewer API (`viewerAPI`)
+- `checkQuizStatus(quizId)` - Check if quiz is open
+- `joinQuiz(quizId, viewerData)` - Join quiz as viewer
+- `getViewers(quizId)` - Get quiz participants
+- `submitAnswer(quizId, answerData)` - Submit answer
+- `openQuiz(quizId, quizData)` - Open quiz for joining
+- `startQuiz(quizId)` - Start quiz
+- `nextQuestion(quizId, questionId, questionData)` - Show next question
+- `finishQuiz(quizId)` - End quiz 

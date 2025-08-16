@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { quizAPI } from '../services/api';
+import { quizAPI, authAPI } from '../services/api';
 
 const QuestionEditor = () => {
   const [quiz, setQuiz] = useState(null);
@@ -42,9 +42,22 @@ const QuestionEditor = () => {
       location: window.location.pathname,
       allParams: params
     });
-    loadQuizAndQuestion();
+    validateTokenAndLoadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quizId, questionId]);
+
+  const validateTokenAndLoadData = async () => {
+    try {
+      // Validate token with auth server
+      await authAPI.validateToken();
+      // If validation succeeds, load quiz and question data
+      await loadQuizAndQuestion();
+    } catch (err) {
+      console.error('❌ Token validation failed:', err);
+      // If token is invalid, redirect to login
+      handleLogout();
+    }
+  };
 
   // Validate questionId early
   const isValidQuestionId = !questionId || questionId === 'new' || 
@@ -95,14 +108,22 @@ const QuestionEditor = () => {
           });
         } catch (err) {
           console.error('❌ Error loading question:', err);
-          setError('Question not found');
+          if (err.response?.status === 401) {
+            handleLogout();
+          } else {
+            setError('Question not found');
+          }
         }
       } else {
         console.log('➕ Creating new question - no data to load');
       }
     } catch (err) {
       console.error('Error loading quiz:', err);
-      setError('Quiz not found');
+      if (err.response?.status === 401) {
+        handleLogout();
+      } else {
+        setError('Quiz not found');
+      }
     } finally {
       setLoading(false);
     }
@@ -216,7 +237,11 @@ const QuestionEditor = () => {
 
     } catch (err) {
       console.error('Error saving question:', err);
-      setError(err.response?.data?.message || 'Failed to save question. Please try again.');
+      if (err.response?.status === 401) {
+        handleLogout();
+      } else {
+        setError(err.response?.data?.message || 'Failed to save question. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -224,6 +249,7 @@ const QuestionEditor = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('jwt');
+    localStorage.removeItem('user');
     navigate('/');
   };
 
