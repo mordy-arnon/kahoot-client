@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { viewerAPI } from '../services/api';
+import webSocketService from '../services/websocket';
 
 const ViewerPlay = () => {
   const { quizId } = useParams();
@@ -28,14 +29,18 @@ const ViewerPlay = () => {
     const session = JSON.parse(storedSession);
     setViewerSession(session);
 
-    // Start polling for quiz updates
-    const pollInterval = setInterval(() => {
-      checkForUpdates();
-    }, 1000); // Poll every second
+    // Initialize WebSocket connection and subscriptions
+    initializeWebSocket(session);
 
-    checkForUpdates();
-
-    return () => clearInterval(pollInterval);
+    return () => {
+      // Cleanup WebSocket subscriptions
+      webSocketService.unsubscribe(`/topic/quiz/${quizId}/updates`);
+      webSocketService.unsubscribe(`/topic/quiz/${quizId}/question`);
+      webSocketService.unsubscribe(`/topic/quiz/${quizId}/results`);
+      if (session.sessionId) {
+        webSocketService.unsubscribe(`/queue/quiz/${quizId}/viewer/${session.sessionId}`);
+      }
+    };
   }, [quizId, navigate]);
 
   useEffect(() => {
@@ -51,49 +56,167 @@ const ViewerPlay = () => {
     }
   }, [timeLeft, submitted, currentQuestion]);
 
-  const checkForUpdates = async () => {
+  const initializeWebSocket = async (session) => {
+    try {
+      // Connect to WebSocket
+      await webSocketService.connect();
+      console.log(`🔌 WebSocket connected for viewer in quiz ${quizId}`);
+
+      // Subscribe to quiz updates
+      webSocketService.subscribeToQuizUpdates(quizId, handleQuizUpdate);
+      
+      // Subscribe to new questions
+      webSocketService.subscribeToQuestions(quizId, handleNewQuestion);
+      
+      // Subscribe to quiz results
+      webSocketService.subscribeToResults(quizId, handleQuizResults);
+      
+      // Subscribe to personal updates if we have a session ID
+      if (session.sessionId) {
+        webSocketService.subscribeToPersonalUpdates(quizId, session.sessionId, handlePersonalUpdate);
+      }
+
+      // Get initial quiz status
+      await checkInitialStatus();
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize WebSocket:', error);
+      // Fallback to HTTP polling if WebSocket fails
+      setError('WebSocket connection failed. Using fallback mode...');
+      startHttpPolling();
+    }
+  };
+
+  const handleQuizUpdate = (message) => {
+    console.log(`🎮 Quiz update received:`, message);
+    
+    if (message.type === 'QUIZ_STATUS') {
+      if (message.data?.isFinished) {
+        setQuizFinished(true);
+      }
+    } else if (message.type === 'QUIZ_STARTED') {
+      setError('Quiz has started! Waiting for first question...');
+    } else if (message.type === 'QUIZ_FINISHED') {
+      setQuizFinished(true);
+    }
+  };
+
+  const handleNewQuestion = (message) => {
+    console.log(`📝 New question received:`, message);
+    
+    if (message.type === 'NEW_QUESTION' && message.question) {
+      const questionData = message.question;
+      const newQuestion = {
+        id: questionData.questionId || Date.now(),
+        question: questionData.question,
+        options: questionData.options,
+        timeLimit: questionData.timeLimit || 30
+      };
+      
+      console.log(`📝 Setting new question for quiz ${quizId}:`, {
+        questionId: newQuestion.id,
+        questionText: newQuestion.question,
+        optionsCount: newQuestion.options?.length,
+        timeLimit: newQuestion.timeLimit
+      });
+      
+      setCurrentQuestion(newQuestion);
+      setTimeLeft(newQuestion.timeLimit);
+      setSubmitted(false);
+      setSelectedAnswer('');
+      setQuestionNumber(prev => prev + 1);
+      setError(''); // Clear any error messages
+      setLoading(false);
+    }
+  };
+
+  const handleQuizResults = (message) => {
+    console.log(`🏆 Quiz results received:`, message);
+    
+    if (message.type === 'QUIZ_RESULTS') {
+      setQuizFinished(true);
+    }
+  };
+
+  const handlePersonalUpdate = (message) => {
+    console.log(`👤 Personal update received:`, message);
+    
+    if (message.type === 'ANSWER_SUBMITTED') {
+      console.log(`✅ Answer submission confirmed for question ${message.questionId}`);
+    }
+  };
+
+  const checkInitialStatus = async () => {
     try {
       const response = await viewerAPI.checkQuizStatus(quizId);
       const status = response.data;
       
-      console.log('Quiz status update:', status);
+      console.log(`🎮 Initial status check for quiz ${quizId}:`, status);
       
       if (status.isFinished) {
         setQuizFinished(true);
-      } else if (status.currentQuestion && status.currentQuestion !== currentQuestion?.id) {
-        // New question available
-        fetchCurrentQuestion(status.currentQuestion);
-      } else if (status.isStarted && !currentQuestion) {
-        // Quiz started but no question yet, wait for first question
+      } else if (status.currentQuestion && status.currentQuestionText && status.currentQuestionOptions) {
+        // There's already a current question
+        const newQuestion = {
+          id: status.currentQuestion,
+          question: status.currentQuestionText,
+          options: status.currentQuestionOptions,
+          timeLimit: status.timeLeft || 30
+        };
+        setCurrentQuestion(newQuestion);
+        setTimeLeft(status.timeLeft || 30);
+      } else if (status.isStarted) {
         setError('Waiting for the first question...');
       }
       
       setLoading(false);
     } catch (err) {
-      console.error('Error checking for updates:', err);
-      setError('Connection lost. Trying to reconnect...');
+      console.error('❌ Error checking initial status:', err);
+      setError('Failed to load quiz status');
+      setLoading(false);
     }
   };
 
-  const fetchCurrentQuestion = async () => {
+  const startHttpPolling = () => {
+    // Fallback HTTP polling if WebSocket fails
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await viewerAPI.checkQuizStatus(quizId);
+        const status = response.data;
+        
+        if (status.isFinished) {
+          setQuizFinished(true);
+          clearInterval(pollInterval);
+        } else if (status.currentQuestion && status.currentQuestionText && status.currentQuestionOptions) {
+          if (status.currentQuestion !== currentQuestion?.id) {
+            const newQuestion = {
+              id: status.currentQuestion,
+              question: status.currentQuestionText,
+              options: status.currentQuestionOptions,
+              timeLimit: status.timeLeft || 30
+            };
+            setCurrentQuestion(newQuestion);
+            setTimeLeft(status.timeLeft || 30);
+            setSubmitted(false);
+            setSelectedAnswer('');
+            setQuestionNumber(prev => prev + 1);
+          } else {
+            setTimeLeft(status.timeLeft || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ HTTP polling error:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  };
+
+  const fetchCurrentQuestion = async (questionId) => {
     try {
-      // In a real implementation, you'd fetch the current question from the viewer API
-      // For now, we'll simulate a question structure
-      const mockQuestion = {
-        id: Date.now(),
-        question: "What is the capital of France?",
-        options: ["London", "Berlin", "Paris", "Madrid"],
-        correctAnswer: "Paris",
-        timeLimit: 30,
-        points: 1000
-      };
-      
-      setCurrentQuestion(mockQuestion);
-      setTimeLeft(mockQuestion.timeLimit);
-      setSubmitted(false);
-      setSelectedAnswer('');
-      setQuestionNumber(prev => prev + 1);
-      
+      // The question data is sent from the creator via the status API
+      // We'll get it from the next status check
+      console.log('Fetching current question:', questionId);
     } catch (err) {
       console.error('Error fetching question:', err);
       setError('Failed to load question.');
@@ -102,6 +225,7 @@ const ViewerPlay = () => {
 
   const handleAnswerSelect = (answer) => {
     if (!submitted) {
+      console.log(`✅ Answer selected for quiz ${quizId}:`, answer);
       setSelectedAnswer(answer);
     }
   };
@@ -120,11 +244,21 @@ const ViewerPlay = () => {
       };
 
       await viewerAPI.submitAnswer(quizId, answerData);
+      
+      console.log(`📤 Answer submitted for quiz ${quizId}:`, {
+        questionId: currentQuestion.id,
+        selectedAnswer: selectedAnswer,
+        submissionTime: answerData.submissionTime,
+        timeLeft: timeLeft
+      });
 
       // Calculate score (simplified)
       if (selectedAnswer === currentQuestion.correctAnswer) {
         const speedBonus = Math.max(100, Math.floor((timeLeft / currentQuestion.timeLimit) * 1000));
+        console.log(`🎯 Correct answer! Points awarded: ${speedBonus}`);
         setScore(prev => prev + speedBonus);
+      } else {
+        console.log(`❌ Incorrect answer. Correct was: ${currentQuestion.correctAnswer}`);
       }
 
     } catch (err) {
@@ -193,207 +327,147 @@ const ViewerPlay = () => {
     );
   }
 
+  const getAnswerColor = (index) => {
+    const colors = ['#28a745', '#ffc107', '#dc3545', '#17a2b8']; // green, yellow, red, light blue
+    return colors[index] || '#6c757d';
+  };
+
+  const getAnswerLetter = (index) => {
+    return String.fromCharCode(65 + index); // A, B, C, D
+  };
+
   return (
-    <div className="container">
-      <div className="card">
-        <div className="quiz-header">
-          <div className="quiz-info">
-            <span>Question {questionNumber}</span>
-            <span className="score">Score: {score}</span>
-          </div>
-          
-          <div className="timer">
-            <div className={`time-left ${timeLeft <= 5 ? 'urgent' : ''}`}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f0f2f5' }}>
+      {/* Header with question and timer */}
+      <div style={{ 
+        height: '15%', 
+        background: '#2c3e50', 
+        color: 'white', 
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
+        <div style={{ width: '100%', maxWidth: '800px', textAlign: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+              Question {questionNumber}
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: timeLeft <= 5 ? '#e74c3c' : '#2ecc71' }}>
               ⏰ {timeLeft}s
             </div>
-          </div>
-        </div>
-
-        <div className="question-section">
-          <h2>{currentQuestion.question}</h2>
-          
-          <div className="answers-grid">
-            {currentQuestion.options.map((option, index) => (
-              <button
-                key={index}
-                className={`answer-option ${selectedAnswer === option ? 'selected' : ''} ${submitted ? 'disabled' : ''}`}
-                onClick={() => handleAnswerSelect(option)}
-                disabled={submitted}
-              >
-                <span className="option-letter">{String.fromCharCode(65 + index)}</span>
-                <span className="option-text">{option}</span>
-              </button>
-            ))}
-          </div>
-
-          {selectedAnswer && !submitted && (
-            <button
-              onClick={handleSubmitAnswer}
-              className="btn btn-primary btn-full"
-              style={{ marginTop: '20px' }}
-            >
-              Submit Answer
-            </button>
-          )}
-
-          {submitted && (
-            <div className="submitted-message">
-              <p>✅ Answer submitted! Waiting for next question...</p>
-              {selectedAnswer === currentQuestion.correctAnswer ? (
-                <p className="correct">🎉 Correct! +{Math.max(100, Math.floor((timeLeft / currentQuestion.timeLimit) * 1000))} points</p>
-              ) : (
-                <p className="incorrect">❌ Incorrect. The correct answer was: {currentQuestion.correctAnswer}</p>
-              )}
+            <div style={{ fontSize: '16px' }}>
+              Score: {score}
             </div>
-          )}
+          </div>
+          
+          <h2 style={{ fontSize: '24px', margin: '0', lineHeight: '1.3' }}>
+            {currentQuestion.question}
+          </h2>
         </div>
-
-        {error && <div className="error">{error}</div>}
       </div>
 
-      <style jsx>{`
-        .quiz-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-          padding: 15px;
-          background: #f0f8ff;
-          border-radius: 8px;
-        }
-        
-        .quiz-info {
-          display: flex;
-          gap: 20px;
-          font-weight: bold;
-        }
-        
-        .score {
-          color: #007bff;
-        }
-        
-        .timer .time-left {
-          font-size: 1.5em;
-          font-weight: bold;
-          color: #28a745;
-        }
-        
-        .timer .time-left.urgent {
-          color: #dc3545;
-          animation: pulse 1s infinite;
-        }
-        
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.5; }
-          100% { opacity: 1; }
-        }
-        
-        .question-section h2 {
-          font-size: 1.5em;
-          margin-bottom: 25px;
-          text-align: center;
-        }
-        
-        .answers-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 15px;
-          margin-bottom: 20px;
-        }
-        
-        .answer-option {
-          display: flex;
-          align-items: center;
-          padding: 15px;
-          border: 2px solid #ddd;
-          border-radius: 8px;
-          background: white;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          text-align: left;
-        }
-        
-        .answer-option:hover:not(.disabled) {
-          border-color: #007bff;
-          background: #f8f9fa;
-        }
-        
-        .answer-option.selected {
-          border-color: #007bff;
-          background: #e3f2fd;
-        }
-        
-        .answer-option.disabled {
-          cursor: not-allowed;
-          opacity: 0.6;
-        }
-        
-        .option-letter {
-          font-weight: bold;
-          background: #007bff;
-          color: white;
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-right: 15px;
-          flex-shrink: 0;
-        }
-        
-        .answer-option.selected .option-letter {
-          background: #28a745;
-        }
-        
-        .option-text {
-          flex: 1;
-        }
-        
-        .submitted-message {
-          text-align: center;
-          padding: 20px;
-          border-radius: 8px;
-          background: #f8f9fa;
-        }
-        
-        .submitted-message .correct {
-          color: #28a745;
-          font-weight: bold;
-        }
-        
-        .submitted-message .incorrect {
-          color: #dc3545;
-          font-weight: bold;
-        }
-        
-        .final-score {
-          text-align: center;
-          margin: 30px 0;
-        }
-        
-        .score-display {
-          font-size: 3em;
-          font-weight: bold;
-          color: #007bff;
-          margin: 20px 0;
-        }
-        
-        .quiz-summary {
-          background: #f8f9fa;
-          padding: 20px;
-          border-radius: 8px;
-          margin-bottom: 30px;
-        }
-        
-        .current-score {
-          text-align: center;
-          font-size: 1.2em;
-          color: #007bff;
-          margin: 20px 0;
-        }
-      `}</style>
+      {/* Full-screen colored answers (85% of screen) */}
+      <div style={{ 
+        height: '85%', 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: '2px'
+      }}>
+        {currentQuestion.options.map((option, index) => (
+          <div
+            key={index}
+            onClick={() => handleAnswerSelect(option)}
+            style={{
+              backgroundColor: selectedAnswer === option ? 'rgba(255,255,255,0.3)' : getAnswerColor(index),
+              color: 'white',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '20px',
+              fontSize: '28px',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              cursor: submitted ? 'not-allowed' : 'pointer',
+              position: 'relative',
+              transition: 'all 0.3s ease',
+              border: selectedAnswer === option ? '5px solid white' : 'none',
+              opacity: submitted ? 0.7 : 1,
+              userSelect: 'none'
+            }}
+          >
+            <div style={{ 
+              position: 'absolute',
+              top: '20px',
+              left: '20px',
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '32px',
+              fontWeight: 'bold'
+            }}>
+              {getAnswerLetter(index)}
+            </div>
+            
+            <div style={{ marginTop: '40px', lineHeight: '1.2', fontSize: '24px' }}>
+              {option}
+            </div>
+            
+            {selectedAnswer === option && (
+              <div style={{ 
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                fontSize: '40px'
+              }}>
+                ✓
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Status messages */}
+      {submitted && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '20px 40px',
+          borderRadius: '10px',
+          textAlign: 'center',
+          fontSize: '20px',
+          zIndex: 1000
+        }}>
+          ✅ Answer submitted! Waiting for next question...
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#dc3545',
+          color: 'white',
+          padding: '10px 20px',
+          borderRadius: '5px',
+          zIndex: 1000
+        }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 };

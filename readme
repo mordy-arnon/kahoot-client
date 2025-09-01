@@ -24,11 +24,11 @@ please verify the following flows are working:
 7) creator can add a title to the quiz. in ../builders
 8) creator can add a description to the quiz. in ../builders
 9) creator can add a image to the quiz. in ../builders
-10) creator can open a quiz. in ../viewers
-11) student can join the answering students on a specific quiz by inserting it number. in ../viewers
-12) student can insert his name to be seen by creator after the quiz opened. in ../viewers
-13) student can answer each question in the limited time. in ../viewers
-14) for each question, when time ends, the right answer is shown and the points are added to the students and are shown in the creator screen. in ../viewers
-14) student can see the results of the quiz. in ../viewers
+10) creator can open a quiz. he will see a green label showing that the quiz is open and a list of updaing viewers that joined. the server is in ../viewers
+11) viewer can join the viewers on a specific quiz by inserting quiz number, and his name, in the main page, without signup. the server is in ../viewers
+12) creator see the names joining the list, and then he should start the quiz. this will show, in the creator page, the question in the 20% top of the page, and the 4 answers in 2 cols and 2 rows spread on all the screen, that first answer backgroud is green, second answer background in yellow, 3rd is red and 4th is light blue. 
+13) viewer see the same 4 colors spread on all the screen - and he press the answer/color he think is right. he has a limited time. in ../viewers
+14) for each question, when time ends, the right answer is shown only on the creator screen, and the points are added to the viewers and are shown in the creator screen. in ../viewers
+15) after the last question viewer can see the results of the quiz. in ../viewers
 
 ** verify when API return 400 or 401 or 500, the client shows the right error message.

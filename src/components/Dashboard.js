@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { quizAPI, viewerAPI, authAPI } from '../services/api';
-import QuizDebugger from './QuizDebugger';
 
 const Dashboard = () => {
   const [quizzes, setQuizzes] = useState([]);
@@ -13,6 +12,7 @@ const Dashboard = () => {
   const [actionLoading, setActionLoading] = useState({});
   const [quizQuestions, setQuizQuestions] = useState({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState({});
+  const [quizViewers, setQuizViewers] = useState({});
   const navigate = useNavigate();
 
   const copyText = async (text) => {
@@ -33,6 +33,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     validateTokenAndLoadQuizzes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const validateTokenAndLoadQuizzes = async () => {
@@ -111,13 +112,13 @@ const Dashboard = () => {
         // Immediately verify with viewer service real status
         try {
           const statusResp = await viewerAPI.checkQuizStatus(quizId);
-          console.log('Status response:', statusResp.data);
+          console.log(`📊 Quiz ${quizId} opened - Status response:`, statusResp.data);
           setQuizStatuses((prev) => ({
             ...prev,
             [quizId]: statusResp.data,
           }));
         } catch (verifyErr) {
-          console.error('Status verification error:', verifyErr);
+          console.error(`❌ Quiz ${quizId} status verification error:`, verifyErr);
           // Fallback to optimistic status with hint
           setQuizStatuses((prev) => ({
             ...prev,
@@ -152,6 +153,9 @@ const Dashboard = () => {
           [quizId]: { ...prev[quizId], isStarted: true, message: 'Quiz has started' },
         }));
         setCurrentQuestionIndex((prev) => ({ ...prev, [quizId]: 0 }));
+        
+        // Redirect to game screen
+        navigate(`/quiz/${quizId}/game`);
       }
     } catch (err) {
       if (err.response?.status === 401) {
@@ -234,14 +238,22 @@ const Dashboard = () => {
     try {
       const response = await viewerAPI.getViewers(quizId);
       if (response.data.success) {
-        const viewers = response.data.viewers;
-        alert(`Current viewers (${viewers.length}):\n${viewers.map((v) => `• ${v.name} (Score: ${v.totalScore})`).join('\n') || 'No viewers yet'}`);
+        const viewers = response.data.viewers || [];
+        console.log(`👥 Quiz ${quizId} viewers updated:`, viewers.map(v => ({ name: v.name, score: v.totalScore })));
+        setQuizViewers((prev) => ({ ...prev, [quizId]: viewers }));
+        return viewers;
+      } else {
+        console.log(`👥 Quiz ${quizId} no viewers found`);
+        setQuizViewers((prev) => ({ ...prev, [quizId]: [] }));
+        return [];
       }
     } catch (err) {
       if (err.response?.status === 401) {
         handleLogout();
       } else {
-        alert('Failed to get viewers list');
+        console.error(`Failed to get viewers: ${err.response?.data?.message || err.message}`);
+        setQuizViewers((prev) => ({ ...prev, [quizId]: [] }));
+        return [];
       }
     }
   };
@@ -252,6 +264,20 @@ const Dashboard = () => {
     localStorage.removeItem('questionCount');
     navigate('/');
   };
+
+  // Auto-refresh viewers for open quizzes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      Object.entries(quizStatuses).forEach(([quizId, status]) => {
+        if (status?.isOpen) {
+          handleGetViewers(parseInt(quizId));
+        }
+      });
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quizStatuses]);
 
   const getQuizStatusBadge = (status) => {
     if (!status) return null;
@@ -278,8 +304,7 @@ const Dashboard = () => {
           <button onClick={handleLogout} className="btn btn-secondary">Logout</button>
         </div>
 
-        {/* Temporary Debugger */}
-        <QuizDebugger />
+
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ color: '#2d3748', margin: 0 }}>Your Quizzes ({quizzes?.length || 0})</h2>
@@ -335,7 +360,7 @@ const Dashboard = () => {
                       {status && (
                         <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '5px', fontSize: '14px' }}>
                           <strong>Viewer Status:</strong> {status.message}
-                          {console.log(`Quiz ${quiz.id} status:`, status)}
+
                           {status.isOpen && (
                             <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               <div>
@@ -418,9 +443,22 @@ const Dashboard = () => {
                         )}
 
                         {status && status.isOpen && (
-                          <button onClick={() => handleGetViewers(quiz.id)} className="btn btn-info" style={{ padding: '6px 10px', fontSize: '12px' }}>
-                            👥 View Participants
-                          </button>
+                          <div style={{ padding: '8px', backgroundColor: '#e8f5e8', borderRadius: '5px', marginTop: '5px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#155724', marginBottom: '5px' }}>
+                              👥 Participants ({(quizViewers[quiz.id] || []).length})
+                            </div>
+                            <div style={{ maxHeight: '100px', overflowY: 'auto', fontSize: '11px' }}>
+                              {(quizViewers[quiz.id] || []).length === 0 ? (
+                                <div style={{ color: '#6c757d', fontStyle: 'italic' }}>Waiting for viewers to join...</div>
+                              ) : (
+                                quizViewers[quiz.id].map((viewer, index) => (
+                                  <div key={index} style={{ padding: '2px 0', borderBottom: index < quizViewers[quiz.id].length - 1 ? '1px solid #ddd' : 'none' }}>
+                                    • {viewer.name} {viewer.totalScore !== undefined ? `(${viewer.totalScore} pts)` : ''}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

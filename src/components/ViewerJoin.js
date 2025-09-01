@@ -24,6 +24,7 @@ const ViewerJoin = () => {
     try {
       setLoading(true);
       const response = await viewerAPI.checkQuizStatus(quizId);
+      console.log(`🔍 Quiz ${quizId} status check:`, response.data);
       setQuizStatus(response.data);
       if (response.data.isStarted) {
         setError('This quiz has already started and cannot accept new viewers.');
@@ -31,6 +32,7 @@ const ViewerJoin = () => {
         setError('This quiz is not currently open for viewers. Please verify the code with the creator or wait for them to open it.');
       }
     } catch (err) {
+      console.error(`❌ Failed to check status for quiz ${quizId}:`, err);
       setError('Failed to check quiz status. Please verify the quiz ID and try again.');
     } finally {
       setLoading(false);
@@ -47,8 +49,11 @@ const ViewerJoin = () => {
       setError('');
       const joinData = { quizId: parseInt(quizId), name: viewerData.name.trim() };
       const response = await viewerAPI.joinQuiz(quizId, joinData);
+      console.log(`🎯 Join quiz ${quizId} response:`, response.data);
       if (response.data.success) {
-        localStorage.setItem('viewerSession', JSON.stringify({ sessionId: response.data.sessionId, quizId: quizId, name: viewerData.name, joinedAt: new Date().toISOString() }));
+        const session = { sessionId: response.data.sessionId, quizId: quizId, name: viewerData.name, joinedAt: new Date().toISOString() };
+        console.log(`✅ Successfully joined quiz ${quizId} as ${viewerData.name}`);
+        localStorage.setItem('viewerSession', JSON.stringify(session));
         navigate(`/quiz/${quizId}/waiting`);
       } else {
         setError(response.data.message || 'Failed to join quiz');

@@ -38,14 +38,20 @@ const ViewerWaiting = () => {
   const checkQuizStatus = async () => {
     try {
       const response = await viewerAPI.checkQuizStatus(quizId);
+      console.log(`⏳ Waiting room status check for quiz ${quizId}:`, {
+        isOpen: response.data.isOpen,
+        isStarted: response.data.isStarted,
+        message: response.data.message
+      });
       setQuizStatus(response.data);
       
       if (response.data.isStarted && quizStatus !== 'STARTED') {
+        console.log(`🚀 Quiz ${quizId} started! Navigating to play screen...`);
         // Quiz has started, navigate to play screen
         navigate(`/quiz/${quizId}/play`);
       }
     } catch (err) {
-      console.error('Error checking quiz status:', err);
+      console.error(`❌ Error checking quiz ${quizId} status:`, err);
       setError('Connection lost. Trying to reconnect...');
     } finally {
       setLoading(false);
@@ -56,7 +62,9 @@ const ViewerWaiting = () => {
     try {
       const response = await viewerAPI.getViewers(quizId);
       if (response.data.success) {
-        setViewers(response.data.viewers);
+        const viewers = response.data.viewers || [];
+        console.log(`👥 Waiting room viewers update for quiz ${quizId}:`, viewers.map(v => v.name));
+        setViewers(viewers);
       }
     } catch (err) {
       console.error('Error fetching viewers:', err);
