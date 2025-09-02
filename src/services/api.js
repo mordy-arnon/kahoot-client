@@ -62,9 +62,9 @@ export const authAPI = {
 
 export const quizAPI = {
   // Quiz operations
-  getAllQuizzes: () => {
-    console.log('📋 quizAPI.getAllQuizzes() called');
-    return api.get('/api/quiz');
+  getAllQuizzes: (ownerId) => {
+    console.log('📋 quizAPI.getAllQuizzes() called with ownerId', ownerId);
+    return api.get(`/api/quiz?owner=${ownerId}`);
   },
   getQuiz: (quizId) => {
     console.log('📄 quizAPI.getQuiz() called with:', { quizId });
