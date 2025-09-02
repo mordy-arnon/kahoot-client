@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { quizAPI } from '../services/api';
 
@@ -19,27 +19,58 @@ const Dashboard = () => {
     showCreateQuiz
   });
 
-  useEffect(() => {
-    loadQuizzes();
-  }, []);
-
-  const loadQuizzes = async () => {
+  const loadQuizzes = useCallback(async () => {
     try {
       setLoading(true);
+      setError(''); // Clear any existing errors
       console.log('📋 Dashboard - Loading quizzes');
       
-      const response = await quizAPI.getAllQuizzes();
+      // Extract owner ID from JWT token stored in localStorage
+      const jwt = localStorage.getItem('jwt');
+      const ownerId = jwt ? jwt.replace('temp_token_', '') : null;
+      
+      if (!ownerId) {
+        setError('No user ID found. Please log in again.');
+        navigate('/');
+        return;
+      }
+      
+      console.log('📋 Dashboard - Loading quizzes for owner:', ownerId);
+      const response = await quizAPI.getAllQuizzes(ownerId);
       console.log('✅ Quizzes loaded:', response.data);
       
-      setQuizzes(Array.isArray(response.data) ? response.data : []);
+      // Handle successful response
+      const quizzesData = response.data;
+      if (Array.isArray(quizzesData)) {
+        setQuizzes(quizzesData);
+        console.log(`📊 Found ${quizzesData.length} quizzes for user`);
+      } else {
+        // Handle case where response.data is not an array (e.g., null, undefined, or empty object)
+        setQuizzes([]);
+        console.log('📊 No quizzes found for user (non-array response)');
+      }
+      
     } catch (err) {
       console.error('❌ Error loading quizzes:', err);
-      setError('Failed to load quizzes');
-      setQuizzes([]); // Ensure quizzes is always an array
+      
+      // Check if this is a 404 (no quizzes found) or a real error
+      if (err.response && err.response.status === 404) {
+        console.log('📊 No quizzes found for user (404 response)');
+        setQuizzes([]);
+        // Don't set error for 404 - this is normal when user has no quizzes
+      } else {
+        // Real error - network issues, server errors, etc.
+        setError('Failed to load quizzes. Please try again.');
+        setQuizzes([]); // Ensure quizzes is always an array
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    loadQuizzes();
+  }, [loadQuizzes]);
 
   const handleCreateQuiz = async (e) => {
     e.preventDefault();
