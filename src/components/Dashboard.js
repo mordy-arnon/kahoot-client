@@ -19,16 +19,23 @@ const Dashboard = () => {
     showCreateQuiz
   });
 
-  useEffect(() => {
-    loadQuizzes();
-  }, []);
-
   const loadQuizzes = async () => {
     try {
       setLoading(true);
       console.log('📋 Dashboard - Loading quizzes');
       
-      const response = await quizAPI.getAllQuizzes();
+      // Extract owner ID from JWT token stored in localStorage
+      const jwt = localStorage.getItem('jwt');
+      const ownerId = jwt ? jwt.replace('temp_token_', '') : null;
+      
+      if (!ownerId) {
+        setError('No user ID found. Please log in again.');
+        navigate('/');
+        return;
+      }
+      
+      console.log('📋 Dashboard - Loading quizzes for owner:', ownerId);
+      const response = await quizAPI.getAllQuizzes(ownerId);
       console.log('✅ Quizzes loaded:', response.data);
       
       setQuizzes(Array.isArray(response.data) ? response.data : []);
@@ -41,6 +48,10 @@ const Dashboard = () => {
     }
   };
 
+  useEffect(() => {
+    loadQuizzes();
+  }, []);
+
   const handleCreateQuiz = async (e) => {
     e.preventDefault();
     setError('');
@@ -52,7 +63,9 @@ const Dashboard = () => {
 
     try {
       setLoading(true);
-      const response = await quizAPI.createQuiz(newQuiz);
+      const jwt = localStorage.getItem('jwt');
+      const ownerId = jwt ? jwt.replace('temp_token_', '') : null;
+      const response = await quizAPI.createQuiz({ownerId,...newQuiz});
       const createdQuiz = response.data;
       
       // Add to local state
